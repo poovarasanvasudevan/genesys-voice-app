@@ -79,13 +79,18 @@ async def validate_request(path_or_connection, headers_or_request=None):
             return connection.respond(status, text)
         return status, [], text.encode()
 
-    if request_path in ("/", "") and upgrade_header != "websocket":
+    # Platform health checks (Heroku/DO/K8s) hit these without WebSocket upgrade.
+    health_paths = {"/", "", "/health", "/healthz", "/ready"}
+    if request_path in health_paths and upgrade_header != "websocket":
         return _build_response(http.HTTPStatus.OK, "OK\n")
 
     _buffer(f"[HTTP] path={request_path}")
     _flush()
 
     if not request_path.startswith(GENESYS_PATH):
+        # Non-WS probes to unknown paths still get a clean HTTP response when possible.
+        if upgrade_header != "websocket":
+            return _build_response(http.HTTPStatus.OK, "OK\n")
         return _build_response(http.HTTPStatus.NOT_FOUND, "Invalid path\n")
 
     incoming_api_key = header_keys.get("x-api-key")

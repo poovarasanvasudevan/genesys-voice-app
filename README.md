@@ -47,3 +47,8 @@ Header: `x-api-key: <GENESYS_API_KEY>`
 - Media: **PCMU @ 8000 Hz**
 - Keepalive: Genesys `ping` → server `pong` (WebSocket pings disabled)
 - OpenAI: `wss://api.openai.com/v1/realtime?model=...` with PCMU in/out
+- Health: `GET /` (and `/health`) returns `200 OK` for platform probes
+
+### Benign deploy logs
+
+Load balancers sometimes open a TCP socket and close it without an HTTP request. That produces websockets `InvalidMessage` / `EOFError` traces. Those are **not** Genesys call failures and are filtered from logs. Real AudioHook traffic always sends a proper WebSocket upgrade to `/audiohook`.

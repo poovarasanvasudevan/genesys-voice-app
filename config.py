@@ -82,10 +82,43 @@ LOG_FILE = os.getenv("LOG_FILE", "logging.txt")
 LOGGING_FORMAT = "%(asctime)s.%(msecs)03d [%(levelname)s] %(name)s: %(message)s"
 
 
-class _HealthCheckNoiseFilter(logging.Filter):
+class _BenignWebsocketsNoiseFilter(logging.Filter):
+    """
+    Platform health checks / LB TCP probes often:
+      - HTTP GET /  → websockets logs "connection rejected (200 OK)"
+      - bare TCP open/close → "opening handshake failed" + InvalidMessage/EOF
+
+    Those are expected on Heroku/DO/etc. and are not Genesys failures.
+    """
+
+    _MESSAGE_SNIPPETS = (
+        "connection rejected (200 OK)",
+        "opening handshake failed",
+        "did not receive a valid HTTP request",
+        "connection closed while reading HTTP request line",
+        "stream ends after 0 bytes",
+    )
+
     def filter(self, record: logging.LogRecord) -> bool:
         message = record.getMessage() if record else ""
-        return "connection rejected (200 OK)" not in message
+        if any(snippet in message for snippet in self._MESSAGE_SNIPPETS):
+            return False
+
+        if record.exc_info and record.exc_info[0] is not None:
+            exc_type = record.exc_info[0]
+            exc_name = getattr(exc_type, "__name__", "")
+            if exc_name in ("InvalidMessage", "EOFError"):
+                return False
+            # Nested cause text (websockets wraps EOF → InvalidMessage)
+            try:
+                exc = record.exc_info[1]
+                text = str(exc) if exc else ""
+                if any(snippet in text for snippet in self._MESSAGE_SNIPPETS):
+                    return False
+            except Exception:
+                pass
+
+        return True
 
 
 if os.path.exists(LOG_FILE):
@@ -104,5 +137,9 @@ logging.basicConfig(
 
 logger = logging.getLogger("GenesysOpenAIBridge")
 logger.setLevel(root_log_level)
-logging.getLogger("websockets").setLevel(logging.INFO)
-logging.getLogger("websockets.server").addFilter(_HealthCheckNoiseFilter())
+
+_ws_filter = _BenignWebsocketsNoiseFilter()
+for name in ("websockets", "websockets.server", "websockets.asyncio.server"):
+    ws_logger = logging.getLogger(name)
+    ws_logger.setLevel(logging.INFO)
+    ws_logger.addFilter(_ws_filter)
