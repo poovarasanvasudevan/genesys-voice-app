@@ -1,0 +1,12 @@
+[project]
+name = "genesys-voice-app"
+version = "0.1.0"
+description = "Genesys AudioHook ↔ OpenAI Realtime voice bridge"
+requires-python = ">=3.11"
+dependencies = [
+    "websockets>=14.0,<15.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.scripts]
+genesys-voice = "main:main"
